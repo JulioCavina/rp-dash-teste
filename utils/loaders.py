@@ -17,8 +17,7 @@ if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
 
 PATH_VENDAS = os.path.join(DATA_FOLDER, "vendas.parquet")
-PATH_CROWLEY_RAW = os.path.join(DATA_FOLDER, "crowley_raw.parquet")
-PATH_CROWLEY_OPT = os.path.join(DATA_FOLDER, "crowley_opt.parquet")
+PATH_CROWLEY = os.path.join(DATA_FOLDER, "crowley.parquet") # Um único arquivo
 
 def log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
@@ -39,104 +38,58 @@ def get_drive_service():
         st.error(f"Erro Auth Drive: {e}")
         return None
 
-# --- ROTINA NUCLEAR DE LIMPEZA ---
-def reset_environment(files_to_delete):
-    """
-    Remove arquivos físicos e força limpeza da RAM.
-    Executada ANTES de qualquer tentativa de download.
-    """
-    log("☢️ INICIANDO RESET NUCLEAR DO AMBIENTE...")
-    
-    # 1. Força o Python a largar referências de memória
+# --- LIMPEZA DE AMBIENTE ---
+def nuke_environment(files_to_delete):
+    """Apaga arquivos e força o Garbage Collector do Python."""
+    log("☢️ INICIANDO LIMPEZA DE MEMÓRIA E DISCO...")
     gc.collect()
     
-    # 2. Deleta arquivos físicos
     for file_path in files_to_delete:
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
                 log(f"🗑️ Deletado: {file_path}")
-            except OSError as e:
-                log(f"⚠️ Erro ao deletar {file_path} (Arquivo preso?): {e}")
+            except Exception as e:
+                log(f"⚠️ Erro ao deletar {file_path}: {e}")
     
-    # 3. Segunda rodada de limpeza de memória e espera o SO liberar disco
+    time.sleep(1) # Deixa o SO respirar
     gc.collect()
-    time.sleep(1) # Pausa estratégica para o OS respirar
-    log("✨ Ambiente limpo.")
 
-# --- ETL OTIMIZADO ---
-def optimize_crowley(raw_path, opt_path):
-    try:
-        log("⚙️ ETL: Convertendo arquivo RAW para OTIMIZADO...")
-        
-        # Lê o arquivo bruto
-        df = pd.read_parquet(raw_path, engine='pyarrow')
-        
-        # 1. Categorias (Crucial para RAM)
-        cols_cat = ["Praca", "Emissora", "Anunciante", "Anuncio", "Tipo", "DayPart"]
-        for col in cols_cat:
-            if col in df.columns: 
-                df[col] = df[col].astype(str).astype("category") # Cast para str primeiro evita erros
-
-        # 2. Numéricos
-        cols_num = ["Volume de Insercoes", "Duracao"]
-        for col in cols_num:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype("int32")
-
-        # 3. Datas
-        if "Data" in df.columns:
-            df["Data_Dt"] = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce")
-            df.drop(columns=["Data"], inplace=True)
-            
-        # Salva a versão final
-        df.to_parquet(opt_path, index=False)
-        log(f"💾 Arquivo otimizado salvo: {opt_path}")
-        
-        del df
-        gc.collect()
-        return True
-    except Exception as e:
-        log(f"❌ Erro no ETL: {e}")
-        return False
-
-# --- DOWNLOADER ---
+# --- DOWNLOADER SIMPLES ---
 def download_file(service, file_id, dest_path):
     try:
-        log(f"📥 Baixando do Drive para {dest_path}...")
+        log(f"📥 Baixando arquivo para: {dest_path}")
         with open(dest_path, "wb") as f:
             request = service.files().get_media(fileId=file_id)
             downloader = MediaIoBaseDownload(f, request)
             done = False
             while not done:
                 status, done = downloader.next_chunk()
+        log("✅ Download concluído.")
         return True
     except Exception as e:
         log(f"❌ Erro Download: {e}")
         return False
 
 # ==========================================
-# LOADERS COM LOGICA NUCLEAR
+# LOADERS
 # ==========================================
 
 @st.cache_resource(ttl=180, show_spinner="Atualizando Vendas...")
 def fetch_from_drive():
     log("🔄 Atualizando Vendas...")
-    
-    # 1. RESET (Apaga o antigo antes de pensar no novo)
-    reset_environment([PATH_VENDAS])
+    nuke_environment([PATH_VENDAS])
     
     service = get_drive_service()
     if not service: return None, None
     file_id = st.secrets["drive_files"]["faturamento_xlsx"]
     
-    # 2. DOWNLOAD
     if download_file(service, file_id, PATH_VENDAS):
         try:
-            try: df_raw = pd.read_parquet(PATH_VENDAS)
-            except: df_raw = pd.read_excel(PATH_VENDAS, engine="openpyxl")
+            try: df = pd.read_parquet(PATH_VENDAS)
+            except: df = pd.read_excel(PATH_VENDAS, engine="openpyxl")
             
-            df = normalize_dataframe(df_raw)
+            df = normalize_dataframe(df)
             
             # Data Ref
             ultima = "N/A"
@@ -144,7 +97,6 @@ def fetch_from_drive():
                 m = df["data_ref"].max()
                 if pd.notna(m): ultima = m.strftime("%m/%Y")
             
-            del df_raw
             gc.collect()
             return df, ultima
         except Exception as e:
@@ -161,72 +113,76 @@ def load_main_base():
 # --- CROWLEY (CRÍTICO) ---
 @st.cache_resource(ttl=180, show_spinner="Atualizando Crowley...")
 def load_crowley_base():
-    log("🚨 TIMER CROWLEY EXPIRADO: Iniciando Sequência Nuclear...")
+    log("🚨 TIMER CROWLEY: Iniciando rotina leve...")
     
-    # ==========================================================
-    # PASSO 1: TERRA ARRASADA
-    # Apaga tanto o RAW quanto o OTIMIZADO antes de começar.
-    # Garante que temos zero consumo de disco/cache relacionado a base antiga.
-    # ==========================================================
-    reset_environment([PATH_CROWLEY_RAW, PATH_CROWLEY_OPT])
+    # 1. LIMPEZA TOTAL (Remove arquivo anterior para garantir espaço)
+    nuke_environment([PATH_CROWLEY])
     
     service = get_drive_service()
     if not service: return None, "Erro Conexão"
 
     file_id = st.secrets["drive_files"]["crowley_parquet"]
     
-    # ==========================================================
-    # PASSO 2: DOWNLOAD DO NOVO ARQUIVO BRUTO
-    # ==========================================================
-    if not download_file(service, file_id, PATH_CROWLEY_RAW):
+    # 2. DOWNLOAD DIRETO
+    if not download_file(service, file_id, PATH_CROWLEY):
         return None, "Erro Download"
-        
-    # ==========================================================
-    # PASSO 3: OTIMIZAÇÃO (RAW -> OPT)
-    # Transforma o arquivo pesado em leve, salva e apaga o pesado.
-    # ==========================================================
-    success = optimize_crowley(PATH_CROWLEY_RAW, PATH_CROWLEY_OPT)
-    
-    # Limpa o RAW imediatamente após o uso
-    if os.path.exists(PATH_CROWLEY_RAW):
-        os.remove(PATH_CROWLEY_RAW)
-        log("🗑️ Arquivo RAW removido.")
-    
-    if not success:
-        return None, "Erro Processamento"
 
-    # ==========================================================
-    # PASSO 4: LEITURA FINAL (Memory Map)
-    # Só agora o Streamlit "vê" os dados.
-    # ==========================================================
+    # 3. LEITURA DIRETA (Sem reescrita/ETL pesado)
     try:
-        log("📖 Lendo arquivo Otimizado...")
+        log("📖 Lendo arquivo com Memory Map...")
         gc.collect()
         
-        # Leitura limpa
-        df = pd.read_parquet(PATH_CROWLEY_OPT, memory_map=True)
-        
-        # Pega a data
-        ultima = "N/A"
+        # LEITURA OTIMIZADA: Tenta ler apenas as colunas que importam para reduzir largura
+        # Se der erro (coluna nova mudou de nome), lê tudo (fallback)
         try:
-            if "Data_Dt" in df.columns:
-                 m = df["Data_Dt"].max()
-                 if pd.notna(m): ultima = m.strftime("%d/%m/%Y")
-            elif "Data" in df.columns: # Fallback
-                 # Tenta converter só pra pegar o max sem salvar na memória
-                 m = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce").max()
-                 if pd.notna(m): ultima = m.strftime("%d/%m/%Y")
-        except: pass
+            cols_to_load = [
+                "Data", "Praca", "Emissora", "Anunciante", "Anuncio", 
+                "Tipo", "DayPart", "Volume de Insercoes", "Duracao"
+            ]
+            # Valida schema para não crashar se faltar coluna
+            pq_file = pq.ParquetFile(PATH_CROWLEY)
+            existing_cols = [c for c in cols_to_load if c in pq_file.schema.names]
+            
+            df = pd.read_parquet(PATH_CROWLEY, columns=existing_cols, memory_map=True)
+            log(f"✅ Leitura parcial de colunas: {len(existing_cols)} colunas carregadas.")
+        except:
+            log("⚠️ Fallback: Lendo todas as colunas...")
+            df = pd.read_parquet(PATH_CROWLEY, memory_map=True)
+
+        # 4. CONVERSÃO LEVE (In-Place e Opcional)
+        # Fazemos a conversão apenas na memória, SEM salvar no disco de volta
+        log("⚙️ Ajustando tipos em memória...")
+        
+        cat_cols = ["Praca", "Emissora", "Anunciante", "Anuncio", "Tipo", "DayPart"]
+        for col in cat_cols:
+            if col in df.columns:
+                # Converte para categoria para economizar RAM durante o uso do app
+                df[col] = df[col].astype("category")
+
+        # Ajuste de Datas
+        ultima = "N/A"
+        if "Data" in df.columns:
+            # Converte data mas mantém erros como NaT para não crashar
+            df["Data_Dt"] = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce")
+            
+            # Tenta pegar max data
+            try:
+                m = df["Data_Dt"].max()
+                if pd.notna(m): ultima = m.strftime("%d/%m/%Y")
+            except: pass
+            
+            # Opcional: Remover coluna original texto para liberar RAM
+            # df.drop(columns=["Data"], inplace=True) 
 
         if ultima == "N/A":
-             ts = os.path.getmtime(PATH_CROWLEY_OPT)
+             ts = os.path.getmtime(PATH_CROWLEY)
              ultima = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
 
-        log(f"✅ Sucesso! {len(df)} linhas carregadas.")
+        log(f"🚀 Base pronta! ({len(df)} linhas)")
         return df, ultima
 
     except Exception as e:
-        log(f"❌ Erro Leitura Final: {e}")
-        # Se falhar aqui, apaga o otimizado também para não ficar lixo
-        if os.path.exists(PATH_CROWLEY_OPT): os.remove(PATH_CROWLEY_OPT)
+        log(f"❌ Erro Leitura: {e}")
+        # Se falhar, apaga para tentar limpo na próxima
+        if os.path.exists(PATH_CROWLEY): os.remove(PATH_CROWLEY)
         return None, "Erro Leitura"
