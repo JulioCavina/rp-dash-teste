@@ -3,27 +3,23 @@ import streamlit as st
 import pandas as pd
 import json
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
-# RECEBE data_atualizacao COMO ARGUMENTO
 def render(df_crowley, cookies, data_atualizacao):
-    # Aumenta o limite de células para estilização
     pd.set_option("styler.render.max_elements", 2_000_000)
 
-    # Botão voltar discreto no topo esquerdo
+    # --- Header e Voltar ---
     if st.button("Voltar", key="btn_voltar_topo"):
         st.query_params["view"] = "menu"
         st.session_state.pop("novos_search_trigger", None)
         st.rerun()
 
-    # Título Centralizado e Grande
     st.markdown('<div class="page-title-centered">Busca de Novos Anunciantes</div>', unsafe_allow_html=True)
     
     if df_crowley is None or df_crowley.empty:
         st.error("Base de dados não carregada.")
         st.stop()
 
-    # Verifica colunas necessárias
     if "Data_Dt" not in df_crowley.columns:
         if "Data" in df_crowley.columns:
             df_crowley["Data_Dt"] = pd.to_datetime(df_crowley["Data"], dayfirst=True, errors="coerce")
@@ -31,7 +27,17 @@ def render(df_crowley, cookies, data_atualizacao):
             st.error("Coluna de Data não encontrada na base.")
             st.stop()
 
-    # --- PREPARAÇÃO DE FILTROS & COOKIES ---
+    # --- CONFIGURAÇÃO DE DATAS LIMITES ---
+    min_date_allowed = date(2024, 1, 1)
+    
+    try:
+        max_date_allowed = datetime.strptime(data_atualizacao, "%d/%m/%Y").date()
+    except:
+        max_date_allowed = datetime.now().date()
+        
+    tooltip_dates = f"Dados disponíveis para pesquisa:\nDe 01/01/2024 até {data_atualizacao}"
+
+    # --- COOKIES E FILTROS SALVOS ---
     saved_filters = {}
     cookie_val = cookies.get("crowley_filters_novos")
     if cookie_val:
@@ -44,73 +50,108 @@ def render(df_crowley, cookies, data_atualizacao):
         val = saved_filters.get(key)
         if val:
             try:
-                return datetime.strptime(val, "%Y-%m-%d").date()
+                d = datetime.strptime(val, "%Y-%m-%d").date()
+                if d < min_date_allowed: return min_date_allowed
+                if d > max_date_allowed: return max_date_allowed
+                return d
             except:
                 return default_date
         return default_date
 
-    hoje = datetime.now().date()
-    default_ini = hoje - timedelta(days=30)
-    default_ref_fim = default_ini - timedelta(days=1)
-    default_ref_ini = default_ref_fim - timedelta(days=30)
+    # Datas Default
+    default_ini = max(min_date_allowed, max_date_allowed - timedelta(days=30))
+    default_ref_fim = max(min_date_allowed, default_ini - timedelta(days=1))
+    default_ref_ini = max(min_date_allowed, default_ref_fim - timedelta(days=30))
 
     val_dt_ini = get_date_from_cookie("dt_ini", default_ini)
-    val_dt_fim = get_date_from_cookie("dt_fim", hoje)
+    val_dt_fim = get_date_from_cookie("dt_fim", max_date_allowed)
     val_ref_ini = get_date_from_cookie("ref_ini", default_ref_ini)
     val_ref_fim = get_date_from_cookie("ref_fim", default_ref_fim)
     
-    val_praca = saved_filters.get("praca", None)
-    val_veiculo = saved_filters.get("veiculo", "Consolidado (Todas as emissoras)") 
-    val_anunciantes = saved_filters.get("anunciantes", [])
+    saved_praca = saved_filters.get("praca", None)
+    saved_veiculo = saved_filters.get("veiculo", "Consolidado (Todas as emissoras)")
+    saved_anunciantes = saved_filters.get("anunciantes", [])
 
-    # Listas para Selectbox
-    lista_pracas = sorted(df_crowley["Praca"].dropna().unique())
-    lista_anunciantes_full = sorted(df_crowley["Anunciante"].dropna().unique())
+    # --- INTERFACE DE FILTROS ---
+    st.markdown("##### Configuração da Análise")
     
-    # Lógica do Veículo: Adiciona "Consolidado" no topo
-    raw_veiculos = sorted(df_crowley["Emissora"].dropna().unique())
-    opcao_consolidado = "Consolidado (Todas as emissoras)"
-    lista_veiculos = [opcao_consolidado] + raw_veiculos
-    
-    idx_praca = lista_pracas.index(val_praca) if val_praca in lista_pracas else 0
-    
-    if val_veiculo in lista_veiculos:
-        idx_veiculo = lista_veiculos.index(val_veiculo)
-    else:
-        idx_veiculo = 0
-
-    # --- ÁREA DE FILTROS ---
-    with st.form(key="form_novos"):
-        st.markdown("##### Configuração da Análise")
+    with st.container(border=True):
         
+        # 1. Datas
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Período de Análise (Atual)**")
+            st.markdown("**Período de Análise (Atual)**", help=tooltip_dates)
             col_d1, col_d2 = st.columns(2)
-            dt_ini = col_d1.date_input("Início", value=val_dt_ini, format="DD/MM/YYYY")
-            dt_fim = col_d2.date_input("Fim", value=val_dt_fim, format="DD/MM/YYYY")
+            dt_ini = col_d1.date_input("Início", value=val_dt_ini, min_value=min_date_allowed, max_value=max_date_allowed, format="DD/MM/YYYY")
+            dt_fim = col_d2.date_input("Fim", value=val_dt_fim, min_value=min_date_allowed, max_value=max_date_allowed, format="DD/MM/YYYY")
         
         with c2:
-            st.markdown("**Período de Referência (Comparação)**")
+            st.markdown("**Período de Referência (Comparação)**", help=tooltip_dates)
             col_d3, col_d4 = st.columns(2)
-            ref_ini = col_d3.date_input("Ref. Início", value=val_ref_ini, format="DD/MM/YYYY")
-            ref_fim = col_d4.date_input("Ref. Fim", value=val_ref_fim, format="DD/MM/YYYY")
+            ref_ini = col_d3.date_input("Ref. Início", value=val_ref_ini, min_value=min_date_allowed, max_value=max_date_allowed, format="DD/MM/YYYY")
+            ref_fim = col_d4.date_input("Ref. Fim", value=val_ref_fim, min_value=min_date_allowed, max_value=max_date_allowed, format="DD/MM/YYYY")
 
         st.divider()
 
+        # 2. Filtros em Cascata
         c3, c4, c5 = st.columns([1, 1, 2])
+        
+        lista_pracas = sorted(df_crowley["Praca"].dropna().unique())
+        
+        def on_praca_change():
+            st.session_state["crowley_veiculo_key"] = "Consolidado (Todas as emissoras)"
+            st.session_state["crowley_anunc_key"] = []
+            st.session_state["novos_search_trigger"] = False
+
+        if "crowley_praca_key" not in st.session_state:
+            idx_praca = lista_pracas.index(saved_praca) if saved_praca in lista_pracas else 0
+            st.session_state["crowley_praca_key"] = lista_pracas[idx_praca]
+
         with c3:
-            sel_praca = st.selectbox("Praça", options=lista_pracas, index=idx_praca)
+            sel_praca = st.selectbox(
+                "Praça", 
+                options=lista_pracas, 
+                key="crowley_praca_key",
+                on_change=on_praca_change
+            )
+
+        df_praca_filtered = df_crowley[df_crowley["Praca"] == sel_praca]
+        
+        lista_anunciantes_local = sorted(df_praca_filtered["Anunciante"].dropna().unique())
+        raw_veiculos_local = sorted(df_praca_filtered["Emissora"].dropna().unique())
+        
+        opcao_consolidado = "Consolidado (Todas as emissoras)"
+        lista_veiculos_local = [opcao_consolidado] + raw_veiculos_local
+        
+        if "crowley_veiculo_key" not in st.session_state:
+            val_inicial = saved_veiculo if saved_veiculo in lista_veiculos_local else opcao_consolidado
+            st.session_state["crowley_veiculo_key"] = val_inicial
+
         with c4:
-            sel_veiculo = st.selectbox("Veículo Base (Protagonista)", options=lista_veiculos, index=idx_veiculo, help="Selecione 'Consolidado' para ver novos em qualquer emissora.")
+            sel_veiculo = st.selectbox(
+                "Veículo Base (Protagonista)", 
+                options=lista_veiculos_local,
+                key="crowley_veiculo_key",
+                help="Selecione 'Consolidado' para ver novos em qualquer emissora."
+            )
+            
+        anunciantes_validos = [a for a in saved_anunciantes if a in lista_anunciantes_local]
+        if "crowley_anunc_key" not in st.session_state:
+            st.session_state["crowley_anunc_key"] = anunciantes_validos
+
         with c5:
-            sel_anunciante = st.multiselect("Filtrar Anunciante (Opcional)", options=lista_anunciantes_full, default=val_anunciantes, placeholder="Todos os anunciantes")
+            sel_anunciante = st.multiselect(
+                "Filtrar Anunciante (Opcional)", 
+                options=lista_anunciantes_local,
+                key="crowley_anunc_key",
+                placeholder="Todos os anunciantes desta praça"
+            )
 
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Botão de pesquisa
-        submitted = st.form_submit_button("Pesquisar Novos Anunciantes", type="primary", use_container_width=True)
+        submitted = st.button("Pesquisar Novos Anunciantes", type="primary", use_container_width=True)
 
+    # --- LÓGICA DE PROCESSAMENTO ---
+    
     if submitted:
         st.session_state["novos_search_trigger"] = True
         
@@ -121,17 +162,14 @@ def render(df_crowley, cookies, data_atualizacao):
             "anunciantes": sel_anunciante
         }
         cookies["crowley_filters_novos"] = json.dumps(new_filters)
-        cookies.save() 
+        cookies.save()
 
-    # --- PROCESSAMENTO ---
     if st.session_state.get("novos_search_trigger"):
         
-        # 1. Filtro de Praça e Anunciante (Sempre aplica)
         mask_base = (df_crowley["Praca"] == sel_praca)
         if sel_anunciante:
             mask_base = mask_base & (df_crowley["Anunciante"].isin(sel_anunciante))
 
-        # 2. Filtro de Veículo (Só aplica se NÃO for Consolidado)
         if sel_veiculo != opcao_consolidado:
             mask_base = mask_base & (df_crowley["Emissora"] == sel_veiculo)
 
@@ -156,19 +194,13 @@ def render(df_crowley, cookies, data_atualizacao):
             
             df_resultado = df_atual[df_atual["Anunciante"].isin(novos_anunciantes)].copy()
             
-            # --- PREPARAÇÃO DOS DADOS DE EXIBIÇÃO ---
-            
-            # A) PIVOT TABLE
-            if "Volume de Insercoes" in df_resultado.columns:
-                val_col = "Volume de Insercoes"
-                agg_func = "sum"
-            else:
-                df_resultado["Contagem"] = 1
-                val_col = "Contagem"
-                agg_func = "count"
+            # --- A) PIVOT TABLE ---
+            val_col = "Volume de Insercoes" if "Volume de Insercoes" in df_resultado.columns else "Contagem"
+            if val_col == "Contagem": df_resultado["Contagem"] = 1
+            agg_func = "sum" if val_col == "Volume de Insercoes" else "count"
 
+            pivot_table = pd.DataFrame()
             try:
-                # observed=True para silenciar warning
                 pivot_table = pd.pivot_table(
                     df_resultado,
                     index="Anunciante",
@@ -181,29 +213,23 @@ def render(df_crowley, cookies, data_atualizacao):
                 pivot_table["TOTAL"] = pivot_table.sum(axis=1)
                 pivot_table = pivot_table.sort_values(by="TOTAL", ascending=False)
                 
-                # Exibe Pivot
                 st.markdown("### Visão Geral por Emissora")
                 
                 st.dataframe(
                     pivot_table.style.background_gradient(cmap="Blues", subset=["TOTAL"]).format("{:.0f}"),
                     width="stretch", 
-                    height=min(400, len(pivot_table) * 35 + 40)
+                    height=min(450, len(pivot_table) * 35 + 40)
                 )
 
             except Exception as e:
                 st.error(f"Erro ao gerar tabela dinâmica: {e}")
-                pivot_table = pd.DataFrame() # Fallback
 
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # B) TABELA DETALHADA
+            # --- B) TABELA DETALHADA ---
             rename_map = {
-                "Praca": "Praça",
-                "Anuncio": "Anúncio",
-                "Duracao": "Duração",
-                "Emissora": "Veículo",
-                "Volume de Insercoes": "Inserções",
-                "Tipo": "Tipo"
+                "Praca": "Praça", "Anuncio": "Anúncio", "Duracao": "Duração",
+                "Emissora": "Veículo", "Volume de Insercoes": "Inserções", "Tipo": "Tipo"
             }
             
             df_detalhe = df_resultado.copy()
@@ -214,17 +240,34 @@ def render(df_crowley, cookies, data_atualizacao):
             cols_existentes = [c for c in cols_originais if c in df_detalhe.columns]
             
             df_exibicao = df_detalhe[cols_existentes].rename(columns=rename_map)
+            df_exibicao.sort_values(by=["Anunciante", "Data"], inplace=True)
+
+            # --- TOTALIZADOR DETALHADA VISUAL (CORRIGIDO) ---
+            df_exibicao_display = df_exibicao.copy()
+            col_insercoes = "Inserções" if "Inserções" in df_exibicao_display.columns else None
+            
+            if col_insercoes:
+                total_insercoes = df_exibicao_display[col_insercoes].sum()
+                
+                # CORREÇÃO: Usa "" em vez de None para evitar warnings de concatenação
+                new_row = {c: "" for c in df_exibicao_display.columns}
+                new_row["Anunciante"] = "TOTAL GERAL"
+                new_row[col_insercoes] = total_insercoes
+                if "Duração" in df_exibicao_display.columns:
+                    new_row["Duração"] = 0 # Garante int se coluna for int
+
+                df_total_row = pd.DataFrame([new_row])
+                df_exibicao_display = pd.concat([df_exibicao_display, df_total_row], ignore_index=True)
 
             with st.expander("Fonte de Dados (Detalhamento)", expanded=False):
                 st.dataframe(
-                    df_exibicao.sort_values(by=["Anunciante", "Data"]),
+                    df_exibicao_display,
                     width="stretch", 
                     hide_index=True
                 )
 
             # --- EXPORTAÇÃO EXCEL ---
             st.markdown("---")
-            
             with st.spinner("Carregando Exportação..."):
                 filtros_dict = {
                     "Parâmetro": [
@@ -245,21 +288,36 @@ def render(df_crowley, cookies, data_atualizacao):
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_filtros_export.to_excel(writer, sheet_name='Filtros', index=False)
                     worksheet_filtros = writer.sheets['Filtros']
-                    worksheet_filtros.set_column('A:A', 30)
-                    worksheet_filtros.set_column('B:B', 50)
+                    worksheet_filtros.set_column('A:A', 30); worksheet_filtros.set_column('B:B', 50)
                     
                     if not pivot_table.empty:
-                        pivot_table.to_excel(writer, sheet_name='Visão Geral')
+                        pivot_export = pivot_table.copy()
+                        total_row = pivot_export.sum(numeric_only=True)
+                        pivot_export.loc["TOTAL GERAL"] = total_row
+                        
+                        pivot_export.to_excel(writer, sheet_name='Visão Geral')
                         worksheet_pivot = writer.sheets['Visão Geral']
                         worksheet_pivot.set_column('A:A', 40) 
 
                     if not df_exibicao.empty:
-                        df_exibicao.to_excel(writer, sheet_name='Detalhamento', index=False)
+                        df_exibicao_export = df_exibicao.copy()
+                        if col_insercoes:
+                            total_ins = df_exibicao_export[col_insercoes].sum()
+                            
+                            # CORREÇÃO NA EXPORTAÇÃO: Usa "" em vez de None
+                            new_row_exp = {c: "" for c in df_exibicao_export.columns}
+                            new_row_exp["Anunciante"] = "TOTAL GERAL"
+                            new_row_exp[col_insercoes] = total_ins
+                            if "Duração" in df_exibicao_export.columns:
+                                new_row_exp["Duração"] = 0
+                            
+                            df_exibicao_export = pd.concat([df_exibicao_export, pd.DataFrame([new_row_exp])], ignore_index=True)
+
+                        df_exibicao_export.to_excel(writer, sheet_name='Detalhamento', index=False)
                         worksheet_detalhe = writer.sheets['Detalhamento']
                         worksheet_detalhe.set_column('A:H', 20)
 
             c_vazio1, c_vazio2, c_btn, c_vazio3, c_vazio4 = st.columns([1, 1, 1, 1, 1])
-            
             with c_btn:
                 st.download_button(
                     label="Exportar Relatório Completo (.xlsx)",
@@ -270,7 +328,6 @@ def render(df_crowley, cookies, data_atualizacao):
                     use_container_width=True
                 )
             
-            # CORREÇÃO DO RODAPÉ AQUI: Usa data_atualizacao
             st.markdown(f"""
                 <div style="text-align: center; color: #666; font-size: 0.8rem; margin-top: 5px;">
                     Última atualização da base de dados: {data_atualizacao}

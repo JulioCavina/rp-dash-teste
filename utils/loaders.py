@@ -1,24 +1,29 @@
 # utils/loaders.py
 import os
 import gc
-import tempfile
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+import pyarrow.parquet as pq
+from datetime import datetime, timezone
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from .format import normalize_dataframe
 
-# --- FUNÇÕES AUXILIARES DE CONEXÃO ---
+# Cria a pasta data se não existir
+DATA_FOLDER = "data"
+if not os.path.exists(DATA_FOLDER):
+    os.makedirs(DATA_FOLDER)
 
+# Caminhos persistentes
+PATH_CROWLEY = os.path.join(DATA_FOLDER, "crowley.parquet")
+PATH_VENDAS = os.path.join(DATA_FOLDER, "vendas.parquet")
+
+# --- CONEXÃO DRIVE ---
 def get_drive_service():
-    """Autentica e retorna o serviço do Google Drive."""
-    # Verificação de segurança para não crashar se secrets não existirem
     if "gcp_service_account" not in st.secrets or "drive_files" not in st.secrets:
-        st.error("❌ Erro: Segredos de configuração (Secrets) não encontrados.")
+        st.error("❌ Erro: Secrets não configurados.")
         return None
-
     try:
         service_account_info = dict(st.secrets["gcp_service_account"])
         creds = service_account.Credentials.from_service_account_info(
@@ -26,76 +31,98 @@ def get_drive_service():
         )
         return build('drive', 'v3', credentials=creds)
     except Exception as e:
-        st.error(f"Erro na autenticação do Drive: {e}")
+        st.error(f"Erro Auth Drive: {e}")
         return None
 
-def download_to_temp_file(service, file_id, suffix):
+def get_drive_metadata(service, file_id):
+    """Retorna timestamp de modificação do arquivo no Drive (aware datetime)."""
+    try:
+        meta = service.files().get(fileId=file_id, fields="modifiedTime").execute()
+        dt_str = meta.get("modifiedTime")
+        return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except Exception:
+        try:
+            return datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except:
+            return None
+
+def download_file_persistent(service, file_id, local_path):
     """
-    Baixa um arquivo do Drive para uma pasta temporária no disco.
-    Retorna o caminho do arquivo.
+    Baixa o arquivo para a pasta data/ com Logs de Data/Hora.
+    Usa troca atômica (.tmp -> final) para garantir substituição limpa.
     """
     try:
-        # Delete=False é necessário para Windows/alguns Linux para permitir reabertura
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            request = service.files().get_media(fileId=file_id)
-            downloader = MediaIoBaseDownload(tmp_file, request)
+        # 1. Verifica metadados do Drive
+        drive_dt = get_drive_metadata(service, file_id)
+        
+        # 2. Verifica arquivo local
+        if os.path.exists(local_path) and drive_dt:
+            local_ts = os.path.getmtime(local_path)
+            local_dt = datetime.fromtimestamp(local_ts, tz=timezone.utc)
             
+            # Se o arquivo local for mais novo ou igual ao do Drive, NÃO baixa
+            if local_dt >= drive_dt:
+                # print(f"Arquivo local {local_path} já está atualizado.") # Silencioso se não precisar atualizar
+                return True
+
+        # 3. Download Atômico
+        timestamp_log = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        print(f"[{timestamp_log}] 📥 Iniciando download da atualização: {local_path}...")
+        
+        # Baixa para um arquivo temporário primeiro (.tmp)
+        temp_download_path = local_path + ".tmp"
+        
+        with open(temp_download_path, "wb") as f:
+            request = service.files().get_media(fileId=file_id)
+            downloader = MediaIoBaseDownload(f, request)
             done = False
             while not done:
                 status, done = downloader.next_chunk()
-            
-            tmp_file.flush()
-            return tmp_file.name
+        
+        # 4. Substituição (Remove o velho e coloca o novo)
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path) # Tenta limpar o antigo explicitamente
+            except OSError:
+                pass # Se estiver bloqueado (Windows), o replace tenta forçar
+        
+        os.replace(temp_download_path, local_path)
+        
+        timestamp_end = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        print(f"[{timestamp_end}] ✅ Atualização concluída e substituída: {local_path}")
+        
+        return True
     except Exception as e:
-        print(f"Erro no download temporário: {e}")
-        return None
+        timestamp_err = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        print(f"[{timestamp_err}] ❌ Erro download persistente: {e}")
+        # Limpa o temporário se deu erro
+        if os.path.exists(local_path + ".tmp"):
+            os.remove(local_path + ".tmp")
+        return False
 
-def get_file_modified_time(service, file_id):
-    """Obtém a data de modificação do arquivo no Drive."""
-    try:
-        file_metadata = service.files().get(fileId=file_id, fields="modifiedTime").execute()
-        mod_time_str = file_metadata.get("modifiedTime")
-        if mod_time_str:
-            mod_dt = datetime.strptime(mod_time_str[:19], "%Y-%m-%dT%H:%M:%S")
-            return mod_dt.strftime("%d/%m/%Y %H:%M")
-    except:
-        pass
-    return datetime.now().strftime("%d/%m/%Y %H:%M")
-
-# --- CARREGAMENTO BASE DE VENDAS (FATURAMENTO) ---
-
-# MUDANÇA 1: cache_resource gasta menos RAM pois não serializa o objeto
-@st.cache_resource(ttl=3600, show_spinner="Carregando do Data Lake (Vendas)...")
+# --- CARREGAMENTO VENDAS (CACHE RESOURCE) ---
+@st.cache_resource(ttl=3600, show_spinner="Atualizando Vendas...")
 def fetch_from_drive():
-    # Limpeza preventiva antes de começar
     gc.collect()
-    
     service = get_drive_service()
     if not service: return None, None
 
     file_id = st.secrets["drive_files"]["faturamento_xlsx"]
-    temp_path = None
+    
+    # Atualiza pasta data/ (Sobrescreve se necessário)
+    if not download_file_persistent(service, file_id, PATH_VENDAS):
+        if not os.path.exists(PATH_VENDAS):
+            return None, "Erro Download"
 
     try:
-        temp_path = download_to_temp_file(service, file_id, suffix=".parquet")
-        if not temp_path: return None, "Erro Download"
-
         try:
-            df_raw = pd.read_parquet(temp_path)
-        except Exception:
-            try:
-                df_raw = pd.read_excel(temp_path, engine="openpyxl")
-            except Exception as e:
-                st.error(f"Erro ao ler Vendas: {e}")
-                return None, None
-        
+            df_raw = pd.read_parquet(PATH_VENDAS, memory_map=True)
+        except:
+            df_raw = pd.read_excel(PATH_VENDAS, engine="openpyxl")
+
         df = normalize_dataframe(df_raw)
-        
-        # Libera memória imediatamente
         del df_raw
         gc.collect()
-
-        if df.empty: return None, "Dados Vazios"
 
         ultima_atualizacao = "N/A"
         if "data_ref" in df.columns and pd.api.types.is_datetime64_any_dtype(df["data_ref"]):
@@ -103,86 +130,74 @@ def fetch_from_drive():
             if pd.notna(max_date): ultima_atualizacao = max_date.strftime("%m/%Y")
         
         if ultima_atualizacao == "N/A":
-            ultima_atualizacao = get_file_modified_time(service, file_id)
-            
+            ts = os.path.getmtime(PATH_VENDAS)
+            ultima_atualizacao = datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M")
+
         return df, ultima_atualizacao
 
     except Exception as e:
-        print(f"Erro Drive Vendas: {e}")
+        st.error(f"Erro ao ler Vendas: {e}")
         return None, None
-    
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            try: os.remove(temp_path)
-            except: pass
-        gc.collect()
 
 def load_main_base():
     if "uploaded_dataframe" in st.session_state and st.session_state.uploaded_dataframe is not None:
         return st.session_state.uploaded_dataframe, st.session_state.get("uploaded_timestamp", "Upload Manual")
     return fetch_from_drive()
 
-# --- CARREGAMENTO BASE CROWLEY (PARQUET - ULTRA OTIMIZADO) ---
 
-# MUDANÇA 1: cache_resource é vital aqui para evitar duplicar a base na memória
-@st.cache_resource(ttl=3600, show_spinner="Acessando base Crowley (Otimizado)...")
+# --- CARREGAMENTO CROWLEY (CACHE RESOURCE + MEMORY MAP) ---
+@st.cache_resource(ttl=3600, show_spinner="Atualizando Crowley...")
 def load_crowley_base():
-    # Limpeza preventiva: tenta liberar espaço da versão antiga se possível
+    # Limpeza de memória antes de começar
     gc.collect()
-
+    
     service = get_drive_service()
     if not service: return None, "Erro Conexão"
 
     file_id = st.secrets["drive_files"]["crowley_parquet"]
-    temp_path = None
+    
+    # Atualiza pasta data/ (Sobrescreve se necessário)
+    success = download_file_persistent(service, file_id, PATH_CROWLEY)
+    if not success and not os.path.exists(PATH_CROWLEY):
+        return None, "Erro Download"
 
     try:
-        temp_path = download_to_temp_file(service, file_id, suffix=".parquet")
-        if not temp_path: return None, "Erro Download"
-
-        df = pd.read_parquet(temp_path)
+        # LEITURA COM MEMORY MAP (Economia de RAM)
+        df = pd.read_parquet(PATH_CROWLEY, memory_map=True)
         
-        # OTIMIZAÇÃO: Converter Strings para Categorias
-        cols_para_categoria = ["Praca", "Emissora", "Anunciante", "Anuncio", "Tipo", "DayPart"]
-        for col in cols_para_categoria:
-            if col in df.columns:
-                df[col] = df[col].astype("category")
+        # OTIMIZAÇÃO: Categorias
+        cols_cat = ["Praca", "Emissora", "Anunciante", "Anuncio", "Tipo", "DayPart"]
+        for col in cols_cat:
+            if col in df.columns: df[col] = df[col].astype("category")
 
-        # OTIMIZAÇÃO: Downcast Numérico
-        cols_numericas = ["Volume de Insercoes", "Duracao"]
-        for col in cols_numericas:
+        # OTIMIZAÇÃO: Numéricos (Limpeza de Vazios + Downcast)
+        cols_num = ["Volume de Insercoes", "Duracao"]
+        for col in cols_num:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], downcast="integer")
+                # fillna(0) corrige o erro do PyArrow com células vazias
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype("int32")
 
-        # DATA: Datetime
+        # DATA
         ultima_atualizacao = "N/A"
         if "Data" in df.columns:
-            # Converte e sobrescreve
             df["Data_Dt"] = pd.to_datetime(df["Data"], dayfirst=True, errors="coerce")
-            
-            # Remove a original string para liberar memória
             df.drop(columns=["Data"], inplace=True)
-            
             try:
                 max_ts = df["Data_Dt"].max()
-                if pd.notna(max_ts):
-                    ultima_atualizacao = max_ts.strftime("%d/%m/%Y")
-            except:
-                pass
+                if pd.notna(max_ts): ultima_atualizacao = max_ts.strftime("%d/%m/%Y")
+            except: pass
 
         if ultima_atualizacao == "N/A":
-            ultima_atualizacao = get_file_modified_time(service, file_id)
+            ts = os.path.getmtime(PATH_CROWLEY)
+            ultima_atualizacao = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
 
         return df, ultima_atualizacao
 
     except Exception as e:
-        st.error(f"Erro ao processar Crowley: {e}")
+        st.error(f"Erro Crítico Crowley: {e}")
+        # Se corrompeu, apaga para forçar download na próxima
+        if os.path.exists(PATH_CROWLEY): os.remove(PATH_CROWLEY)
         return None, "Erro Leitura"
         
     finally:
-        # Garante que o arquivo temporário no disco seja deletado
-        if temp_path and os.path.exists(temp_path):
-            try: os.remove(temp_path)
-            except: pass
-        # Faxina final na memória
         gc.collect()

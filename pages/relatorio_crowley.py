@@ -27,7 +27,17 @@ def render(cookies):
         .nb-card { background-color: #007dc3; border: 2px solid white; border-radius: 15px; color: white !important; text-decoration: none !important; font-size: 1rem; font-weight: 600; height: 120px; width: 240px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15); transition: all 0.25s ease-in-out; text-align: center; }
         .nb-card:hover { background-color: #00a8e0; transform: scale(1.05); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25); text-decoration: none !important; }
         .nb-card:active { transform: scale(0.97); background-color: #004b8d; }
-        .footer-date { margin-top: 50px; text-align: right; font-size: 0.85rem; color: #666; border-top: 1px solid #eee; padding-top: 10px; width: 100%; }
+        
+        /* AJUSTE: Centralização do Rodapé */
+        .footer-date { 
+            margin-top: 50px; 
+            text-align: center; /* Centralizado */
+            font-size: 0.85rem; 
+            color: #666; 
+            border-top: 1px solid #eee; 
+            padding-top: 10px; 
+            width: 100%; 
+        }
         
         /* Estilos Personalizados da Página */
         .filter-container { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #e9ecef; margin-bottom: 20px; }
@@ -49,7 +59,8 @@ def render(cookies):
     # --- 1. MENU PRINCIPAL ---
     if current_view == "menu":
         st.title("Relatório Crowley")
-        st.markdown("Análise de concorrência, monitoramento de spots e performance musical.")
+        # AJUSTE: Texto descritivo atualizado
+        st.markdown("Análise de concorrência e monitoramento de spots.")
 
         st.markdown("""
         <div class="nb-container">
@@ -69,7 +80,6 @@ def render(cookies):
         """, unsafe_allow_html=True)
 
     # --- 2. MÓDULOS ESPECÍFICOS ---
-    # PASSAMOS data_atualizacao PARA TODOS
     elif current_view == "novos":
         busca_novos.render(df_crowley, cookies, data_atualizacao)
 
