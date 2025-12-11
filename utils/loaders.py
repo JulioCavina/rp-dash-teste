@@ -84,7 +84,7 @@ def download_file(service, file_id, dest_path):
 # LOADERS
 # ==========================================
 
-@st.cache_resource(ttl=180, show_spinner="Atualizando Vendas...")
+@st.cache_resource(ttl=3600, show_spinner="Atualizando Vendas...")
 def fetch_from_drive():
     log("🔄 Vendas: Iniciando refresh...")
     nuke_and_prepare([PATH_VENDAS])
@@ -196,3 +196,4 @@ def load_crowley_base():
         # Limpa para não deixar arquivo corrompido
         if os.path.exists(PATH_CROWLEY): os.remove(PATH_CROWLEY)
         return None, "Erro Leitura"
+
