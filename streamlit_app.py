@@ -8,6 +8,10 @@ import base64
 import streamlit_cookies_manager 
 import json 
 import locale
+import warnings
+
+# ==================== FILTRO DE AVISOS (Correção Visual) ====================
+warnings.filterwarnings("ignore", message=".*st.cache is deprecated.*")
 
 # Tenta configurar locale para pt-BR
 try:
@@ -23,7 +27,7 @@ from utils.loaders import load_main_base
 from utils.filters import aplicar_filtros
 from utils.format import normalize_dataframe
 
-# Importação das páginas existentes + Nova página
+# Importação das páginas existentes
 from pages import (
     inicio, 
     visao_geral, 
@@ -33,7 +37,7 @@ from pages import (
     top10, 
     relatorio_abc, 
     eficiencia,
-    relatorio_crowley # <--- NOVO IMPORT
+    relatorio_crowley
 )
 
 # ==================== CONFIGURAÇÕES GERAIS ====================
@@ -42,6 +46,27 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ==================== REMOÇÃO DE MARCAS (CSS NUCLEAR) ====================
+st.markdown("""
+    <style>
+        /* Esconde o Menu de Hambúrguer (3 pontinhos) e o botão Deploy */
+        #MainMenu {visibility: hidden;}
+        .stDeployButton {display:none;}
+        
+        /* Esconde o rodapé padrão "Made with Streamlit" */
+        footer {visibility: hidden;}
+        
+        /* Esconde a barra superior colorida (Decoration) */
+        header {visibility: hidden;}
+        [data-testid="stDecoration"] {display: none;}
+        [data-testid="stToolbar"] {visibility: hidden !important;}
+        
+        /* ESCONDE A "BOLINHA" (Viewer Badge) NO CANTO INFERIOR DIREITO */
+        .viewerBadge_container__1QSob {display: none !important;}
+        div[class^='viewerBadge_container'] {display: none !important;}
+    </style>
+""", unsafe_allow_html=True)
 
 # ==================== LÓGICA DE AUTENTICAÇÃO ====================
 
@@ -96,7 +121,14 @@ if not st.session_state.authenticated:
             submitted = st.form_submit_button("Entrar")
 
         if submitted:
-            if password.strip().lower() == "datadrivenrp":
+            # --- LÓGICA DE SENHA VIA SECRETS (MANTIDA) ---
+            try:
+                senha_correta = st.secrets["senha_app_ribeirao_preto"]
+            except Exception:
+                st.error("Erro Crítico: Senha não configurada no secrets.toml.")
+                st.stop()
+
+            if password.strip() == senha_correta:
                 st.session_state.authenticated = True
                 cookies["auth_token"] = "user_is_logged_in"
                 cookies.save() 
@@ -161,7 +193,7 @@ pages_keys = [
     "Top 10", 
     "Relatório ABC", 
     "Eficiência",
-    "Relatório Crowley" # <--- NOVA PÁGINA NA LISTA
+    "Relatório Crowley"
 ]
 
 try:
@@ -192,14 +224,11 @@ df = None
 ultima_atualizacao = "N/A"
 
 # Se NÃO for a página Crowley ou Início, carrega a base pesada de vendas
-# (O Início carrega a base para mostrar status, mas o Crowley não precisa)
 if pagina_ativa != "Relatório Crowley":
     df, ultima_atualizacao = load_main_base()
 
-    # Se a base for necessária (não for Crowley) e estiver vazia, exibe erro
+    # Se a base for necessária e estiver vazia, exibe erro
     if (df is None or df.empty) and pagina_ativa != "Início": 
-        # Na Home deixamos passar para mostrar o botão de upload se necessário, 
-        # mas nas outras bloqueamos.
         st.warning("⚠️ Nenhuma base de dados encontrada.")
         st.stop()
 
@@ -214,7 +243,7 @@ pages = {
     "Top 10": top10,
     "Relatório ABC": relatorio_abc,
     "Eficiência": eficiencia,
-    "Relatório Crowley": relatorio_crowley # <--- MAPEAMENTO DO MÓDULO
+    "Relatório Crowley": relatorio_crowley
 }
 
 page_display = {
@@ -226,7 +255,7 @@ page_display = {
     "Top 10": "Top 10",
     "Relatório ABC": "Relatório ABC",
     "Eficiência": "Eficiência / KPIs",
-    "Relatório Crowley": "Relatório Crowley" # <--- NOME EXIBIDO
+    "Relatório Crowley": "Relatório Crowley"
 }
 
 st.sidebar.markdown('<p style="font-size:0.85rem; font-weight:600; margin-bottom: 0.5rem; margin-left: 10px;">Selecione a página:</p>', unsafe_allow_html=True)
@@ -249,7 +278,7 @@ if pagina_ativa == "Início":
 
 elif pagina_ativa == "Relatório Crowley":
     # Renderiza a página Crowley passando o objeto 'cookies' existente
-    pages[pagina_ativa].render(cookies) # <--- AQUI ESTAVA O PROBLEMA
+    pages[pagina_ativa].render(cookies)
 
 else:
     # --- PÁGINAS PADRÃO ---
@@ -263,9 +292,6 @@ else:
         pages[pagina_ativa].render(df_filtrado, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao)
         
 # ==================== POP-UPS e RODAPÉ ====================
-
-# (Mantive os pop-ups existentes inalterados para economizar espaço visual aqui,
-#  mas eles continuam existindo no final do arquivo original).
 
 @st.dialog("Banner de Boas-vindas", width="medium")
 def modal_boas_vindas():
