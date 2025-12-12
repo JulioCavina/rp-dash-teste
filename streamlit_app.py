@@ -48,25 +48,13 @@ st.set_page_config(
 )
 
 # ==================== REMOÇÃO DE MARCAS (CSS NUCLEAR) ====================
-st.markdown("""
-    <style>
-        /* Esconde o Menu de Hambúrguer (3 pontinhos) e o botão Deploy */
-        #MainMenu {visibility: hidden;}
-        .stDeployButton {display:none;}
-        
-        /* Esconde o rodapé padrão "Made with Streamlit" */
-        footer {visibility: hidden;}
-        
-        /* Esconde a barra superior colorida (Decoration) */
-        header {visibility: hidden;}
-        [data-testid="stDecoration"] {display: none;}
-        [data-testid="stToolbar"] {visibility: hidden !important;}
-        
-        /* ESCONDE A "BOLINHA" (Viewer Badge) NO CANTO INFERIOR DIREITO */
-        .viewerBadge_container__1QSob {display: none !important;}
-        div[class^='viewerBadge_container'] {display: none !important;}
-    </style>
-""", unsafe_allow_html=True)
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
 
 # ==================== LÓGICA DE AUTENTICAÇÃO ====================
 
