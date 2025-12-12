@@ -332,3 +332,21 @@ label, .stMarkdown h3, .stMarkdown h4 {
         border-radius: 10px !important;
     }
 }
+
+/* ========================================================================== */
+/* ====================  REMOVER MARCAS DO STREAMLIT  ======================= */
+/* ========================================================================== */
+
+/* Esconde o menu de hambúrguer (Três pontinhos no topo) e toolbar de desenvolvimento */
+#MainMenu {visibility: hidden !important;}
+[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+
+/* Esconde o rodapé padrão "Made with Streamlit" */
+footer {visibility: hidden !important; display: none !important;}
+
+/* Esconde a barra de decoração superior (colorida) */
+header {visibility: hidden !important;}
+[data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
+
+/* Esconde marca d'água de viewer (se existir) */
+.viewerBadge_container__1QSob {display: none !important;}
