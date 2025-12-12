@@ -1,12 +1,6 @@
 # streamlit_app.py
 
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+
 
 
 import os
@@ -19,6 +13,15 @@ import streamlit_cookies_manager
 import json 
 import locale
 import warnings
+
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+
 
 # ==================== FILTRO DE AVISOS (Correção Visual) ====================
 warnings.filterwarnings("ignore", message=".*st.cache is deprecated.*")
