@@ -96,10 +96,21 @@ def get_top_client_info(df_base):
     nome_display = nome_full[:18] + "..." if len(nome_full) > 18 else nome_full
     return nome_full, valor, nome_display
 
-# ==================== FUNÇÃO AUXILIAR DE TABELA ====================
+# ==================== FUNÇÃO AUXILIAR DE TABELA (COM ESTILO DE TOTAL) ====================
 def display_styled_table(df):
     if df.empty: return
-    st.dataframe(df, width="stretch", hide_index=True)
+
+    def highlight_total_row(row):
+        # Verifica se a primeira coluna (Mês/Ano) é "Total"
+        if row.iloc[0] == "Total": 
+            return ['background-color: #e6f3ff; font-weight: bold; color: #003366'] * len(row)
+        return [''] * len(row)
+
+    st.dataframe(
+        df.style.apply(highlight_total_row, axis=1), 
+        width="stretch", 
+        hide_index=True
+    )
 
 def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=None):
     # Aplica CSS para centralizar os cards e aproximar título/valor
@@ -210,14 +221,28 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
     if not evol_raw.empty:
         # Prepara Tabela para Visualização
         evol_display = evol_raw[["meslabel", "faturamento", "insercoes"]].copy()
-        
-        # Formatação
-        evol_display["faturamento"] = evol_display["faturamento"].apply(brl)
-        evol_display["insercoes"] = evol_display["insercoes"].apply(format_int)
-        
-        # Renomeia
         evol_display.columns = ["Mês/Ano", "Faturamento", "Inserções"]
         
+        # --- LÓGICA DO TOTALIZADOR ---
+        if show_total:
+            total_fat = evol_display["Faturamento"].sum()
+            total_ins = evol_display["Inserções"].sum()
+            
+            # Cria a linha de total
+            row_total = pd.DataFrame([{
+                "Mês/Ano": "Total",
+                "Faturamento": total_fat,
+                "Inserções": total_ins
+            }])
+            
+            # Concatena
+            evol_display = pd.concat([evol_display, row_total], ignore_index=True)
+        
+        # Formatação (após somar para não quebrar o cálculo)
+        evol_display["Faturamento"] = evol_display["Faturamento"].apply(brl)
+        evol_display["Inserções"] = evol_display["Inserções"].apply(format_int)
+        
+        # Exibe com estilo
         display_styled_table(evol_display)
     else:
         st.info("Sem dados para o período selecionado.")

@@ -1,8 +1,5 @@
 # streamlit_app.py
 
-
-
-
 import os
 import streamlit as st
 from PIL import Image
@@ -13,15 +10,6 @@ import streamlit_cookies_manager
 import json 
 import locale
 import warnings
-
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
-
 
 # ==================== FILTRO DE AVISOS (Correção Visual) ====================
 warnings.filterwarnings("ignore", message=".*st.cache is deprecated.*")
@@ -40,34 +28,34 @@ from utils.loaders import load_main_base
 from utils.filters import aplicar_filtros
 from utils.format import normalize_dataframe
 
-# Importação das páginas existentes
+# Importação das páginas existentes (Crowley removido, top10 atualizado para top_anunciantes)
 from pages import (
     inicio, 
     visao_geral, 
     clientes_faturamento, 
     perdas_ganhos, 
     cruzamentos_intersecoes, 
-    top10, 
+    top_anunciantes, 
     relatorio_abc, 
-    eficiencia,
-    relatorio_crowley
+    eficiencia
 )
 
-# ==================== CONFIGURAÇÕES GERAIS ====================
+# ==================== CONFIGURAÇÕES GERAIS (COM FAVICON) ====================
+icon_path = os.path.join("assets", "icone.png") 
+favicon = None
+
+if os.path.exists(icon_path):
+    try:
+        favicon = Image.open(icon_path)
+    except Exception as e:
+        print(f"Erro ao carregar favicon: {e}")
+
 st.set_page_config(
-    page_title="Dashboard Vendas Ribeirão Preto",
+    page_title="Dashboard Vendas",
+    page_icon=favicon, 
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ==================== REMOÇÃO DE MARCAS (CSS NUCLEAR) ====================
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
 
 # ==================== LÓGICA DE AUTENTICAÇÃO ====================
 
@@ -122,9 +110,8 @@ if not st.session_state.authenticated:
             submitted = st.form_submit_button("Entrar")
 
         if submitted:
-            # --- LÓGICA DE SENHA VIA SECRETS (MANTIDA) ---
             try:
-                senha_correta = st.secrets["senha_app_ribeirao_preto"]
+                senha_correta = st.secrets["senha_app"]
             except Exception:
                 st.error("Erro Crítico: Senha não configurada no secrets.toml.")
                 st.stop()
@@ -140,22 +127,6 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==================== APP PRINCIPAL ====================
-
-def set_favicon(icon_path):
-    try:
-        if not os.path.exists(icon_path):
-            return
-        with open(icon_path, "rb") as f:
-            icon_base64 = base64.b64encode(f.read()).decode()
-        favicon_html = f"""
-            <link rel="icon" type="image/png" href="data:image/png;base64,{icon_base64}">
-            <link rel="shortcut icon" type="image/png" href="data:image/png;base64,{icon_base64}">
-        """
-        st.markdown(favicon_html, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"❌ Erro ao processar o ícone: {e}")
-
-set_favicon(os.path.join("assets", "icone.png"))
 
 def local_css(file_name):
     if os.path.exists(file_name):
@@ -184,17 +155,16 @@ if os.path.exists(logo_path):
 query_params = st.query_params
 nav_id = query_params.get("nav", ["0"])[0]
 
-# Lista de chaves das páginas (A ordem aqui define a ordem na Sidebar)
+# Lista de chaves das páginas (Top 10 -> Top Anunciantes)
 pages_keys = [
     "Início", 
     "Visão Geral", 
     "Clientes & Faturamento", 
     "Perdas & Ganhos", 
     "Cruzamentos & Interseções", 
-    "Top 10", 
+    "Top Anunciantes", 
     "Relatório ABC", 
-    "Eficiência",
-    "Relatório Crowley"
+    "Eficiência"
 ]
 
 try:
@@ -215,8 +185,7 @@ if pagina_ativa != "Início":
     """, unsafe_allow_html=True)
 
 if pagina_ativa == "Início":
-    st.title("Dashboard Vendas Ribeirão Preto")
-    st.caption("Menu lateral para navegar • Filtros no topo • Exportação em Excel")
+    pass 
 
 # ==================== CARREGAMENTO DE DADOS (CONDICIONAL) ====================
 
@@ -224,14 +193,12 @@ if pagina_ativa == "Início":
 df = None
 ultima_atualizacao = "N/A"
 
-# Se NÃO for a página Crowley ou Início, carrega a base pesada de vendas
-if pagina_ativa != "Relatório Crowley":
-    df, ultima_atualizacao = load_main_base()
+# Carrega base de vendas (Sempre, exceto se houver outra lógica futura)
+df, ultima_atualizacao = load_main_base()
 
-    # Se a base for necessária e estiver vazia, exibe erro
-    if (df is None or df.empty) and pagina_ativa != "Início": 
-        st.warning("⚠️ Nenhuma base de dados encontrada.")
-        st.stop()
+if (df is None or df.empty) and pagina_ativa != "Início": 
+    st.warning("⚠️ Nenhuma base de dados encontrada.")
+    st.stop()
 
 
 # ==================== MENU LATERAL (SIDEBAR) ====================
@@ -241,10 +208,9 @@ pages = {
     "Clientes & Faturamento": clientes_faturamento,
     "Perdas & Ganhos": perdas_ganhos,
     "Cruzamentos & Interseções": cruzamentos_intersecoes,
-    "Top 10": top10,
+    "Top Anunciantes": top_anunciantes,
     "Relatório ABC": relatorio_abc,
-    "Eficiência": eficiencia,
-    "Relatório Crowley": relatorio_crowley
+    "Eficiência": eficiencia
 }
 
 page_display = {
@@ -253,21 +219,27 @@ page_display = {
     "Clientes & Faturamento": "Clientes & Faturamento",
     "Perdas & Ganhos": "Perdas & Ganhos",
     "Cruzamentos & Interseções": "Cruzamentos & Interseções",
-    "Top 10": "Top 10",
+    "Top Anunciantes": "Top Anunciantes",
     "Relatório ABC": "Relatório ABC",
-    "Eficiência": "Eficiência / KPIs",
-    "Relatório Crowley": "Relatório Crowley"
+    "Eficiência": "Eficiência / KPIs"
 }
 
 st.sidebar.markdown('<p style="font-size:0.85rem; font-weight:600; margin-bottom: 0.5rem; margin-left: 10px;">Selecione a página:</p>', unsafe_allow_html=True)
 
 html_menu = []
+
+# Gera os links internos
 for idx, page_name in enumerate(pages_keys):
     is_active = "active" if page_name == pagina_ativa else ""
     display_name = page_display.get(page_name, page_name) 
     html_menu.append(
         f'<a class="sidebar-nav-btn {is_active}" href="?nav={idx}" target="_self">{display_name}</a>'
     )
+
+# ADICIONA O LINK EXTERNO DO CROWLEY AO FINAL DA LISTA
+html_menu.append(
+    '<a class="sidebar-nav-btn" href="https://novabrasil-datadriven-crowley.streamlit.app" target="_blank">Relatório Crowley</a>'
+)
 
 st.sidebar.markdown(f'<div class="sidebar-nav-container">{"".join(html_menu)}</div>', unsafe_allow_html=True)
 st.sidebar.divider()
@@ -277,12 +249,8 @@ st.sidebar.divider()
 if pagina_ativa == "Início":
     pages[pagina_ativa].render(df) 
 
-elif pagina_ativa == "Relatório Crowley":
-    # Renderiza a página Crowley passando o objeto 'cookies' existente
-    pages[pagina_ativa].render(cookies)
-
 else:
-    # --- PÁGINAS PADRÃO ---
+    # --- PÁGINAS PADRÃO DE FATURAMENTO ---
     if df is not None:
         df_filtrado, anos_sel, emis_sel, exec_sel, cli_sel, mes_ini, mes_fim, show_labels, show_total = aplicar_filtros(df, cookies)
         
@@ -297,7 +265,7 @@ else:
 @st.dialog("Banner de Boas-vindas", width="medium")
 def modal_boas_vindas():
     st.markdown("""
-        <div class="popup-title-styled">Dashboard Vendas Ribeirão Preto</div>
+        <div class="popup-title-styled">Dashboard Vendas</div>
         <div class="popup-subtitle">Projeto Data Driven Novabrasil | Powered by Streamlit</div>
     """, unsafe_allow_html=True)
 
@@ -312,7 +280,6 @@ def modal_boas_vindas():
         * **Visão Geral:** KPIs rápidos e metas.
         * **Clientes & Faturamento:** Análise detalhada.
         * **Perdas & Ganhos:** Churn e Novos Negócios.
-        * **Relatório Crowley:** Monitoramento musical e concorrência (Novo!).
         ---
         """)
         st.markdown("**Dúvidas:** (31) 9.9274-4574 - Silvia Freitas - Head de Inteligência de Mercado")

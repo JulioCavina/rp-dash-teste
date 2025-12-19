@@ -586,14 +586,18 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
         show_total=show_total,
         column_config=get_cmu_config(df_7_main.columns)
     )
+    
+    # ==================== EXPORTAÇÃO (CENTRALIZADA) ====================
     st.divider()
 
-    # ==================== EXPORTAÇÃO ====================
-    if st.button("📥 Exportar Dados da Página", type="secondary"):
-        st.session_state.show_clientes_export = True
+    # Lógica de Centralização do Botão (Igual Visão Geral)
+    c_left, c_btn, c_right = st.columns([3, 2, 3])
+    with c_btn:
+        if st.button("Exportar Dados da Página", type="secondary", use_container_width=True):
+            st.session_state.show_clientes_export = True
     
     if ultima_atualizacao:
-        st.caption(f"📅 Última atualização da base de dados: {ultima_atualizacao}")
+        st.markdown(f"<div style='text-align: center; color: grey; font-size: 0.8rem; margin-top: 5px;'>Última atualização da base de dados: {ultima_atualizacao}</div>", unsafe_allow_html=True)
 
     if st.session_state.get("show_clientes_export", False):
         @st.dialog("Opções de Exportação - Clientes & Faturamento")

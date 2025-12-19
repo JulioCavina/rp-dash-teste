@@ -8,3 +8,5 @@ libgl1-mesa-glx
 libgtk-3-0
 libdbus-glib-1-2
 xdg-utils
+locales
+locales-all

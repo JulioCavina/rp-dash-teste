@@ -7,6 +7,7 @@ import numpy as np
 from utils.export import create_zip_package 
 
 # ==================== ESTILO CSS (CENTRALIZAÇÃO E ALINHAMENTO) ====================
+# ATUALIZADO: CSS reforçado para corrigir alinhamento de títulos no mobile
 ST_METRIC_CENTER = """
 <style>
 /* Container principal do Metric: Flexbox vertical centralizado */
@@ -20,11 +21,20 @@ ST_METRIC_CENTER = """
     margin: auto;
 }
 
-/* Rótulo (Título do Card) */
+/* Rótulo (Título do Card) - Força centralização do texto */
 [data-testid="stMetricLabel"] {
     justify-content: center;
     width: 100%;
     margin-bottom: 0px !important; 
+    text-align: center !important;
+}
+
+/* Garante que o texto dentro do label (p ou div) também centralize */
+[data-testid="stMetricLabel"] > div, [data-testid="stMetricLabel"] p {
+    text-align: center !important;
+    width: 100%;
+    justify-content: center;
+    display: flex;
 }
 
 /* Valor (Número Grande) */
@@ -424,16 +434,19 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
     
     st.divider()
 
-    # ==================== EXPORTAÇÃO ====================
+    # ==================== EXPORTAÇÃO (CENTRALIZADA) ====================
+    # Lógica de Centralização do Botão (Igual Clientes & Faturamento)
+    c_left, c_btn, c_right = st.columns([3, 2, 3])
+    with c_btn:
+        if st.button("Exportar Dados da Página", type="secondary", use_container_width=True):
+            st.session_state.show_perdas_export = True
+    
+    if ultima_atualizacao:
+        st.markdown(f"<div style='text-align: center; color: grey; font-size: 0.8rem; margin-top: 5px;'>Última atualização da base de dados: {ultima_atualizacao}</div>", unsafe_allow_html=True)
+
     def get_filter_string():
         f = st.session_state 
         return (f"Comparativo: {ano_base} vs {ano_comp} | Meses: {', '.join(f.get('filtro_meses_lista', ['Todos']))}")
-
-    if st.button("📥 Exportar Dados da Página", type="secondary"):
-        st.session_state.show_perdas_export = True
-    
-    if ultima_atualizacao:
-        st.caption(f"📅 Última atualização da base de dados: {ultima_atualizacao}")
 
     if st.session_state.get("show_perdas_export", False):
         @st.dialog("Opções de Exportação - Perdas & Ganhos")

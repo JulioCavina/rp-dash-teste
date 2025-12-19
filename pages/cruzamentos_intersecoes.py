@@ -90,9 +90,7 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
     
     # Lista de todos os clientes únicos no período (Mercado Total Filtrado)
     todos_clientes = set(agg["cliente"].unique())
-    
-    st.divider()
-
+  
     # ==================== CÁLCULOS GERAIS ====================
     exclusivos_mask = emis_count == 1
     compartilhados_mask = emis_count >= 2
@@ -456,7 +454,16 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
 
     st.divider()
 
-    # ==================== EXPORTAÇÃO ====================
+    # ==================== EXPORTAÇÃO (CENTRALIZADA) ====================
+    # Lógica de Centralização do Botão (Padronizada)
+    c_left, c_btn, c_right = st.columns([3, 2, 3])
+    with c_btn:
+        if st.button("Exportar Dados da Página", type="secondary", use_container_width=True):
+            st.session_state.show_cruzamentos_export = True
+    
+    if ultima_atualizacao:
+        st.markdown(f"<div style='text-align: center; color: grey; font-size: 0.8rem; margin-top: 5px;'>Última atualização da base de dados: {ultima_atualizacao}</div>", unsafe_allow_html=True)
+
     def get_filter_string():
         f = st.session_state 
         ano_ini = f.get("filtro_ano_ini", "N/A")
@@ -466,12 +473,6 @@ def render(df, mes_ini, mes_fim, show_labels, show_total, ultima_atualizacao=Non
         meses = ", ".join(f.get("filtro_meses_lista", ["Todos"]))
         clientes = ", ".join(f.get("filtro_clientes", ["Todos"])) if f.get("filtro_clientes") else "Todos"
         return (f"Período (Ano): {ano_ini} a {ano_fim} | Meses: {meses} | Emissoras: {emis} | Executivos: {execs} | Clientes: {clientes}")
-
-    if st.button("📥 Exportar Dados da Página", type="secondary"):
-        st.session_state.show_cruzamentos_export = True
-    
-    if ultima_atualizacao:
-        st.caption(f"📅 Última atualização da base de dados: {ultima_atualizacao}")
 
     if st.session_state.get("show_cruzamentos_export", False):
         @st.dialog("Opções de Exportação - Cruzamentos")

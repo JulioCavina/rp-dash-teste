@@ -51,6 +51,57 @@
     box-shadow: 0 0 5px rgba(0,91,187,0.3) !important;
 }
 
+/* ==================== METRICS / CARDS (GLOBAL - DESKTOP E MOBILE) ==================== */
+/* Centralização total dos cards aplicada globalmente */
+
+/* Container do Card */
+[data-testid="stMetric"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center; 
+    justify-content: center; 
+    text-align: center;
+    width: 100%;
+    margin: auto;
+    /* Borda sutil para Desktop também, opcional */
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 10px;
+}
+
+/* Título do Card (Label) */
+[data-testid="stMetricLabel"] {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+}
+
+/* Texto dentro do Label */
+[data-testid="stMetricLabel"] div, 
+[data-testid="stMetricLabel"] p {
+    text-align: center !important;
+    width: 100% !important;
+    justify-content: center !important;
+    display: flex !important;
+}
+
+/* Valor (Número) */
+[data-testid="stMetricValue"] {
+    justify-content: center;
+    width: 100%;
+    display: flex;
+}
+
+/* Delta (Texto de variação) */
+[data-testid="stMetricDelta"] {
+    justify-content: center;
+    width: 100%;
+    display: flex;
+}
+
 /* ==================== FORÇAR BOTÕES AZUIS (NOVABRASIL) ==================== */
 button[kind="primary"] {
     background-color: var(--azul-nb) !important;
@@ -228,7 +279,8 @@ label, .stMarkdown h3, .stMarkdown h4 {
     [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
         display: grid !important;
         grid-template-columns: 1fr 1fr !important; /* 2 Colunas Exatas */
-        gap: 10px !important; /* Espaçamento padrão */
+        row-gap: 40px !important; 
+        column-gap: 10px !important;
         padding: 0 2px !important;
         flex-wrap: wrap !important;
     }
@@ -242,36 +294,26 @@ label, .stMarkdown h3, .stMarkdown h4 {
         margin: 0 !important;
     }
 
-    /* Estilo do Card (Fundo) - DISTRIBUIÇÃO VERTICAL CORRIGIDA */
+    /* Estilo do Card (Fundo) - Ajustes extras para Mobile (altura mínima, padding) */
+    /* OBS: A centralização já vem do GLOBAL, aqui focamos no layout do Grid */
     [data-testid="stMetric"] {
-        background-color: #f8f9fa;
-        border: 1px solid #e9ecef;
-        border-radius: 10px;
-        padding: 12px 4px !important; /* Padding vertical levemente maior */
-        margin: 0 !important;
+        padding: 12px 4px !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        height: 100% !important; /* Ocupa altura total do grid */
-        min-height: 90px !important; /* Altura mínima garantida */
-        
-        display: flex;
-        flex-direction: column;
-        /* AQUI: Distribui Título, Valor e Delta igualmente no eixo Y */
-        justify-content: space-evenly !important; 
-        align-items: center;
+        height: 100% !important;
+        min-height: 90px !important;
     }
 
     /* --- FONTS REDUZIDAS (Cards) --- */
     /* Título do Card */
     [data-testid="stMetricLabel"] div, [data-testid="stMetricLabel"] p {
-        font-size: 0.7rem !important;
-        text-align: center !important;
+        font-size: 0.75rem !important;
         line-height: 1.2 !important;
         white-space: normal !important;
     }
     
     /* Valor do Card */
     [data-testid="stMetricValue"] div {
-        font-size: 0.95rem !important;
+        font-size: 1rem !important;
         font-weight: 700 !important;
     }
     
@@ -309,11 +351,9 @@ label, .stMarkdown h3, .stMarkdown h4 {
         min-height: 350px !important;
     }
 
-    /* --- 8. RODAPÉ --- */
+    /* --- 8. RODAPÉ (OCULTO APENAS NO MOBILE) --- */
     .footer-container {
-        font-size: 0.65rem;
-        padding: 10px 0; 
-        margin-top: 15px; 
+        display: none !important;
     }
     
     /* --- 9. PÁGINA INÍCIO (BOTÕES) --- */
@@ -332,21 +372,3 @@ label, .stMarkdown h3, .stMarkdown h4 {
         border-radius: 10px !important;
     }
 }
-
-/* ========================================================================== */
-/* ====================  REMOVER MARCAS DO STREAMLIT  ======================= */
-/* ========================================================================== */
-
-/* Esconde o menu de hambúrguer (Três pontinhos no topo) e toolbar de desenvolvimento */
-#MainMenu {visibility: hidden !important;}
-[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-
-/* Esconde o rodapé padrão "Made with Streamlit" */
-footer {visibility: hidden !important; display: none !important;}
-
-/* Esconde a barra de decoração superior (colorida) */
-header {visibility: hidden !important;}
-[data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
-
-/* Esconde marca d'água de viewer (se existir) */
-.viewerBadge_container__1QSob {display: none !important;}
